@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>OpenSky Map</title>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+        <style>
+            body {
+                margin: 0; 
+                overflow: hidden; /* disables scrolling */
+                font-family: Arial, sans-serif;
+                font-size: 17px;
+            }
+
+            #app-container {
+                display: flex;
+                height: 100vh;
+                overflow: hidden;
+                background: linear-gradient(to bottom, #92c0df, #3989da); /* Replace with your preferred colors */
+            }
+
+            #loading-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent white background */
+                display: none; /* Initially hidden */
+                justify-content: center;
+                align-items: center;
+            }
+
+            #map {
+                border: 2px solid #000;
+                border-radius: 5px;
+                height: 99vh;
+                width: 55%;
+                overflow: hidden;
+                margin-right: 1%; /*margin to separate the map from the dropdown */
+                margin-left: 7%;
+                margin-top: 0.20%;
+                margin-bottom: 0.20%;
+                opacity: 1; /* Initial opacity */
+                transition: opacity 0.3s ease; /* Add transition effect for opacity changes */
+            }
+
+            .loading #map {
+                opacity: 0.5; /* Dim the map when loading */
+            }
+
+            #selects-container {
+                display: flex;
+                flex-direction: column;
+                width: 25%; /* Set the width of the selection container */
+                padding: 10px; /* Add padding for better spacing */
+                box-sizing: border-box; /* Include padding in the width */
+            }
+            #images-container1 {
+                display: flex;
+                flex-direction: column;
+                width: 25%; /* Set the width of the selection container */
+                padding: 5px; /* Add padding for better spacing */
+                box-sizing: border-box; /* Include padding in the width */
+            }
+
+            label {
+                margin-bottom: 10px; /* Add margin between labels and selects */
+                font-weight: bold; /* Add this line to make all text bold */
+                font-size: 20px;
+            }
+
+            select, #icaoInput {
+                height: 5%; /* Add margin between labels and selects */
+                margin-bottom: 10px; /* Add margin between labels and selects */
+                font-size: 17px;
+            }
+
+            #searchICAO{
+                font-size: 17px;
+            }
+
+            #errorMessage-container{
+                height: 10%; /* Adjust the top position as needed */
+            }
+
+            #planeGif, #radarGif, #pilotsGif{
+                border: 2px solid #030000;
+                border-radius: 10px;
+                margin-bottom: 10px;
+            }
+
+            .custom-details-box {
+                position: absolute;
+                top: 10px;
+                left: 10px; /* Update to left */
+                background-color: white;
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                z-index: 1000;
+                border: 2px solid #000;
+            }
+
+            .custom-details-box button {
+                cursor: pointer;
+                border: none;
+                background-color: #f1f1f1;
+                color: #333;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+
+            #refreshButton {
+                top: 10px; /* Adjust the top position as needed */
+                right: 10px; /* Adjust the right position as needed */
+                cursor: pointer;
+                z-index: 1001; /* Set a higher z-index than other elements */
+            }
+
+            #zoomOutButton {
+                top: 20px; /* Adjust the top position as needed */
+                right: 10px; /* Adjust the right position as needed */
+                cursor: pointer;
+                z-index: 1001; /* Set a higher z-index than other elements */
+            }
+
+            #mapButtonsContainer {
+                position: absolute;
+                top: 10px; /* Adjust the top position as needed */
+                right: 10px; /* Adjust the right position as needed */
+                display: flex;
+                flex-direction: column;
+                padding: 10px; /* Add padding for better spacing */
+                box-sizing: border-box; /* Include padding in the width */
+                z-index: 1000; /* Set a lower z-index than the buttons to ensure it's behind them */
+            }
+
+        </style>        
+    </head>
+<body>
+    
+    <div id="app-container">
+        <div id="loading-overlay"></div>
+        <div id="map">
+            <div id="mapButtonsContainer">
+                <button id="refreshButton" onclick="refreshAircrafts()" style="margin-bottom: 5px;">
+                    <img src="static/refresh-icon.png" style=" width: 45px; height: 30px;"alt = "Refresh Icon">
+                </button>
+                <button id="zoomOutButton" onclick="zoomOutPage()" style="margin-bottom: 5px;">
+                    <img src="static/zoomout.png" style=" width: 45px; height: 30px;"alt = "ZoomOut Icon">
+                </button>
+                <button id="resetButton" onclick="resetPage()" style=" width: 60px; height: 40px;">
+                    RESET
+                </button>
+            </div>
+        </div>
+        <div id="selects-container">
+            <label for="countrySelect">Filter By Origin country:</label>
+            <select id="countrySelect" onchange="updateCountrySelection(this.value)">
+            </select>
+            <label for="groundSelect">Filter by air position:</label>
+            <select id="groundSelect" onchange="updateGroundSelection(this.value)">
+                <option value="Both" text="Both">Both</option>
+                <option value="On Air" text="On Air">On Ground</option>
+                <option value="On Ground" text="On Ground">In the Air</option>
+            </select>
+            <label for="icaoInput">Get By ICAO24:</label>
+            <input type="text" id="icaoInput">
+            <button id="searchICAO" onclick="handleICAOInput()">Search</button>
+            <div id="errorMessage-container">
+                <div id="errorMessage"></div>
+            </div>
+            <img id="radarGif" src="static/radar.gif" alt="Loading Radar">
+            <img id="planeGif" src="static/planeTakingOff.gif" alt="Loading Plane">
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script>
+
+        var map;
+        var markers = L.markerClusterGroup({
+            minClusterSize: 10,
+            disableClusteringAtZoom: 9,
+            spiderfyOnMaxZoom: false,
+        });
+        var allData = []; // Armazenar todos os dados
+        var filteredData = []; // Armazenar os dados filtrados localmente
+        var onGround = 2;
+        var selectedCountry = "All";
+
+        function resetPage() {
+            closeDetailsBox();
+            document.getElementById('errorMessage').innerText = '';
+
+            document.getElementById('countrySelect').value = ''; // Reset the country select, if applicable
+            document.getElementById('groundSelect').value = 'Both'; // Reset the ground select to its default value
+            map.setView([0, 0], 2); // Adjust the zoom level as needed
+
+            initializeMap();
+        }
+
+        function zoomOutPage() {
+            map.setView([0, 0], 2); // Adjust the zoom level as needed
+        }
+
+        function initMap() {
+                map = L.map('map', {
+                    minZoom: 2,
+                });
+
+                // Adjust the center and zoom level to focus on a specific portion of the map
+                map.setView([0, 0], 2);
+
+                // Set max bounds to restrict the view to a specific region
+                var southWest = L.latLng(-80, -180);
+                var northEast = L.latLng(85, 180);
+                var bounds = L.latLngBounds(southWest, northEast);
+
+                map.setMaxBounds(bounds);
+                map.on('drag', function () {
+                    map.panInsideBounds(bounds, { animate: false });
+                });
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                map.addLayer(markers);
+
+                initializeMap();
+                populateCountryDropdown();
+            }
+
+        function initializeMap(){
+            document.getElementById('app-container').classList.add('loading'); //dims the map to convey loading to user
+            fetch('/get_FlightsData')
+                .then(response => response.json())
+                .then(data => {
+
+                    markers.clearLayers();
+                    allData = data;
+                    var dataToShow = filteredData.length > 0 ? filteredData : allData;
+                    updateMap(dataToShow);
+                })
+                .catch(error => console.error('Error fetching data:', error))
+                .finally(() => {
+                    document.getElementById('app-container').classList.remove('loading'); //hides teh loading overlay when the response is received
+                });
+        }
+
+        function refreshAircrafts(){
+            document.getElementById('app-container').classList.add('loading'); //dims the map to convey loading to user
+            fetch('/updateAircrafts')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+
+                    markers.clearLayers();
+                    allData = data;
+                    var dataToShow = filteredData.length > 0 ? filteredData : allData;
+                    updateMap(dataToShow);
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    alert('An error occurred while issuing API request, contact OpenSkyNetworkAPI for more information.');
+                })
+                .finally(() => {
+                    document.getElementById('app-container').classList.remove('loading'); //hides teh loading overlay when the response is received
+                });
+        }
+
+        function updateCountrySelection(selectedValue) {
+            selectedCountry = selectedValue;
+            doRequest();
+        }
+
+        function updateGroundSelection(selectedValue) {
+            switch(selectedValue){
+                case "On Air":
+                    onGround=1;
+                    break;
+                case "On Ground":
+                    onGround=0;
+                    break;
+                default:
+                    onGround=2;
+                    break;
+                
+            }
+            doRequest();
+        }
+
+        function handleICAOInput() {
+            document.getElementById('app-container').classList.add('loading'); //dims the map to convey loading to user
+            const icaoNumber = document.getElementById('icaoInput').value;
+            closeDetailsBox();
+            fetch(`/getPlaneDetails/${icaoNumber}`)
+                .then(response => response.json())
+                .then(airplanes => {
+                    const airplane = airplanes[0];
+
+                    if (airplane) {
+                        markers.clearLayers();
+                        icaoInput.value = '';
+                        errorMessage.innerText = '';
+                        showDetails(icaoNumber);
+                        updateMap(airplanes)
+                        map.setView([airplane.latitude, airplane.longitude], 6); // Adjust the zoom level as needed
+                    } else {
+                        document.getElementById('errorMessage').innerText = `Error: Plane with the specified ICAO24 doesn't exist`;
+                    }
+                })
+                .catch(error => document.getElementById('errorMessage').innerText = `Error: Plane with the specified ICAO24 doesn't exist`)
+                .finally(() => {
+                    document.getElementById('app-container').classList.remove('loading'); //hides teh loading overlay when the response is received
+                });
+                
+        }
+
+        function doRequest(){
+            document.getElementById('app-container').classList.add('loading');
+
+            var queryParams = new URLSearchParams;
+            if (selectedCountry !== 'All') {
+                queryParams.append('origin_country', selectedCountry);
+            }
+
+            if (onGround !== 2) {
+                queryParams.append('on_ground', onGround);
+            }
+
+            var url = '/get_FlightsData?' + queryParams.toString();
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    markers.clearLayers();
+                    allData = data;
+                    var dataToShow = filteredData.length > 0 ? filteredData : allData;
+                    updateMap(dataToShow);
+                })
+                .catch(error => console.error('Error fetching data:', error))
+                .finally(() => {
+                    document.getElementById('app-container').classList.remove('loading');
+                });
+        }
+
+        function updateMap(dataToShow){
+            dataToShow.forEach(aircraft => {
+                if (aircraft.latitude && aircraft.longitude) {
+
+                    var customIcon = L.divIcon({ // Custom icon for the aircraft
+                        className: 'custom-marker',
+                        html: `<img src="static/airplane.png" style="transform: rotate(${aircraft.true_track}deg); ; width: 40px; height: 40px;">`,
+                        iconAnchor: [16, 32],
+                        popupAnchor: [0, -32],
+
+                    });
+
+                    var marker = L.marker([aircraft.latitude, aircraft.longitude],{ // Create the marker with the custom icon
+                        icon: customIcon,
+                    });
+
+                    var popupData = `<b>ICAO24:</b> ${aircraft.icao24}<br><b>Latitude:</b> ${aircraft.latitude}<br><b>Longitude:</b> ${aircraft.longitude}<br>
+                             <button onclick="planeDetailsClick('${aircraft.icao24}')">Show Details</button>`;
+                    // Add a popup with aircraft details
+                    marker.bindPopup(popupData);
+
+                    // Add the marker to the map
+                    markers.addLayer(marker);
+                }
+            });
+        }
+
+        function planeDetailsClick(icao24){
+            showDetails(icao24);
+            closeDetailsBox();
+        }
+
+        function showDetails(icao24) {
+            document.getElementById('app-container').classList.add('loading'); //dims the map to convey loading to user
+            fetch(`/getPlaneDetails/${icao24}`)
+                .then(response => response.json())
+                .then(airplanes => {
+                    const airplane = airplanes[0];
+
+                    if (airplane) {
+                        const { icao24, latitude, longitude, rotation } = airplane;
+
+                        // Create a details box to display information
+                        var detailsBox = document.createElement('div');
+                        detailsBox.className = 'custom-details-box';
+                        detailsBox.innerHTML = `
+                            <button onclick="closeDetailsBox()">X</button>
+                            <h2>Details for plane with ICAO24: ${airplane.icao24}</h2>
+                            <p><b>Latitude:</b> ${airplane.latitude}°</p>
+                            <p><b>Longitude:</b> ${airplane.longitude}°</p>
+                            <p><b>Rotation:</b> ${airplane.true_track}°</p>
+                            <p><b>Callsign:</b> ${airplane.callsign}</p>
+                            <p><b>Origin Country:</b> ${airplane.origin_country}</p>
+                            <p><b>Time Position:</b> ${convertUnixTime(airplane.time_position)}</p>
+                            <p><b>Last Contact:</b> ${convertUnixTime(airplane.last_contact)}</p>
+                            <p><b>On Ground:</b> ${airplane.on_ground === 1 ? 'Yes' : 'No'}</p>
+                            <p><b>Velocity:</b> ${airplane.velocity} m/s = ${convertMsToKmH(airplane.velocity)}km/h</p>
+                            <p><b>Vertical Rate:</b> ${airplane.vertical_rate !== null && airplane.vertical_rate !== undefined ? airplane.vertical_rate + ' m/s' : '0 m/s'}</p>
+                            <p><b>Sensors:</b> ${airplane.sensors}</p>
+                            <p><b>Baro Altitude:</b> ${airplane.baro_altitude !== null && airplane.baro_altitude !== undefined ? airplane.baro_altitude + ' m' : 'Not provided'}</p>
+                            <p><b>Transponder code:</b> ${airplane.squawk}</p>
+                            <p><b>Special purpose:</b> ${airplane.spi === 1 ? 'Yes' : 'No'}</p>
+                            <p><b>Position Source:</b> ${getPositionSourceName(airplane.position_source)}</p>
+                        `;
+
+                        // Add the details box to the app container
+                        document.getElementById('app-container').appendChild(detailsBox);
+                    } else {
+                        console.error('No airplane data found for ICAO24 code:', icao24);
+                    }
+                })
+                .catch(error => console.error('Error fetching data:', error))
+                .finally(() => {
+                    document.getElementById('app-container').classList.remove('loading'); //hides teh loading overlay when the response is received
+                });
+        }
+
+        function closeDetailsBox() {
+            var detailsBox = document.querySelector('.custom-details-box');
+            if (detailsBox) {
+                detailsBox.remove();
+            }
+        }
+
+        function populateCountryDropdown() {
+            fetch('/get_Countries')
+                .then(response => response.json())
+                .then(countries => {
+                    var dropdown = document.getElementById('countrySelect');// Get the dropdown element
+
+                    var allOption = document.createElement('option');//creates the "All" option on the dropdown
+                    allOption.value = '';
+                    allOption.text = 'All';
+                    dropdown.add(allOption);
+
+
+                    countries.forEach(country => { // Adds the countries to the dropdown
+                        var option = document.createElement('option');
+                        option.value = country.country;
+                        option.text = country.country;
+                        dropdown.add(option);
+                    });
+                })
+                .catch(error => console.error('Error fetching country list:', error));
+        }
+
+        function convertUnixTime(unixTime) {
+            const milliseconds = unixTime * 1000; // Convert to milliseconds
+            const dateObject = new Date(milliseconds);
+
+            const formattedDate = dateObject.toLocaleDateString();
+            const formattedTime = dateObject.toLocaleTimeString();
+
+            return `${formattedDate} ${formattedTime}`;
+        }
+
+        function convertMsToKmH(metersPerSecond) {
+            return metersPerSecond * 3.6;
+        }
+
+        function getPositionSourceName(positionSource) {
+            switch (positionSource) {
+                case 0:
+                    return 'ADS-B';
+                case 1:
+                    return 'ASTERIX';
+                case 2:
+                    return 'MLAT';
+                case 3:
+                    return 'FLARM';
+                default:
+                    return 'Unknown';
+            }
+        }
+
+        
+    document.addEventListener('DOMContentLoaded', function () {
+        initMap();
+    });
+    
+
+    </script>
+    
+</body>
+</html>
+
